@@ -1,32 +1,27 @@
 """Manage a volatile in-memory filesystem.
 """
-from __future__ import absolute_import
-from __future__ import unicode_literals
+from __future__ import absolute_import, unicode_literals
+
+import typing
 
 import contextlib
 import io
 import os
+import six
 import time
-import typing
 from collections import OrderedDict
 from threading import RLock
 
-import six
-
 from . import errors
+from ._typing import overload
 from .base import FS
 from .copy import copy_modified_time
 from .enums import ResourceType, Seek
 from .info import Info
 from .mode import Mode
-from .path import iteratepath
-from .path import normpath
-from .path import split
-from ._typing import overload
+from .path import isbase, iteratepath, normpath, split
 
 if typing.TYPE_CHECKING:
-    import array
-    import mmap
     from typing import (
         Any,
         BinaryIO,
@@ -37,10 +32,14 @@ if typing.TYPE_CHECKING:
         List,
         Optional,
         SupportsInt,
-        Union,
         Text,
         Tuple,
+        Union,
     )
+
+    import array
+    import mmap
+
     from .base import _OpendirFactory
     from .info import RawInfo
     from .permissions import Permissions
@@ -463,15 +462,33 @@ class MemoryFS(FS):
             elif not overwrite and dst_name in dst_dir_entry:
                 raise errors.DestinationExists(dst_path)
 
+            # handle moving a file onto itself
+            if src_dir == dst_dir and src_name == dst_name:
+                if overwrite:
+                    return
+                raise errors.DestinationExists(dst_path)
+
+            # move the entry from the src folder to the dst folder
             dst_dir_entry.set_entry(dst_name, src_entry)
             src_dir_entry.remove_entry(src_name)
+            # make sure to update the entry name itself (see #509)
+            src_entry.name = dst_name
 
             if preserve_time:
                 copy_modified_time(self, src_path, self, dst_path)
 
     def movedir(self, src_path, dst_path, create=False, preserve_time=False):
-        src_dir, src_name = split(self.validatepath(src_path))
-        dst_dir, dst_name = split(self.validatepath(dst_path))
+        _src_path = self.validatepath(src_path)
+        _dst_path = self.validatepath(dst_path)
+        dst_dir, dst_name = split(_dst_path)
+        src_dir, src_name = split(_src_path)
+
+        # move a dir onto itself
+        if _src_path == _dst_path:
+            return
+        # move a dir into itself
+        if isbase(_src_path, _dst_path):
+            raise errors.IllegalDestination(dst_path)
 
         with self._lock:
             src_dir_entry = self._get_dir_entry(src_dir)
@@ -481,12 +498,16 @@ class MemoryFS(FS):
             if not src_entry.is_dir:
                 raise errors.DirectoryExpected(src_path)
 
+            # move the entry from the src folder to the dst folder
             dst_dir_entry = self._get_dir_entry(dst_dir)
             if dst_dir_entry is None or (not create and dst_name not in dst_dir_entry):
                 raise errors.ResourceNotFound(dst_path)
 
+            # move the entry from the src folder to the dst folder
             dst_dir_entry.set_entry(dst_name, src_entry)
             src_dir_entry.remove_entry(src_name)
+            # make sure to update the entry name itself (see #509)
+            src_entry.name = dst_name
 
             if preserve_time:
                 copy_modified_time(self, src_path, self, dst_path)

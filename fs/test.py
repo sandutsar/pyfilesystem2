@@ -5,35 +5,34 @@ All Filesystems should be able to pass these.
 
 """
 
-from __future__ import absolute_import
-from __future__ import unicode_literals
+from __future__ import absolute_import, unicode_literals
 
-from datetime import datetime
 import io
 import itertools
 import json
 import os
+import six
 import time
 import unittest
 import warnings
+from datetime import datetime
+from six import text_type
 
 import fs.copy
 import fs.move
-from fs import ResourceType, Seek
-from fs import errors
-from fs import walk
-from fs import glob
+from fs import ResourceType, Seek, errors, glob, walk
 from fs.opener import open_fs
 from fs.subfs import ClosingSubFS, SubFS
-
-import pytz
-import six
-from six import text_type
 
 if six.PY2:
     import collections as collections_abc
 else:
     import collections.abc as collections_abc
+
+try:
+    from datetime import timezone
+except ImportError:
+    from ._tzcompat import timezone  # type: ignore
 
 
 UNICODE_TEXT = """
@@ -1196,9 +1195,9 @@ class FSTestCases(object):
         can_write_acccess = info.is_writeable("details", "accessed")
         can_write_modified = info.is_writeable("details", "modified")
         if can_write_acccess:
-            self.assertEqual(info.accessed, datetime(2016, 7, 5, tzinfo=pytz.UTC))
+            self.assertEqual(info.accessed, datetime(2016, 7, 5, tzinfo=timezone.utc))
         if can_write_modified:
-            self.assertEqual(info.modified, datetime(2016, 7, 5, tzinfo=pytz.UTC))
+            self.assertEqual(info.modified, datetime(2016, 7, 5, tzinfo=timezone.utc))
 
     def test_touch(self):
         self.fs.touch("new.txt")
@@ -1206,7 +1205,7 @@ class FSTestCases(object):
         self.fs.settimes("new.txt", datetime(2016, 7, 5))
         info = self.fs.getinfo("new.txt", namespaces=["details"])
         if info.is_writeable("details", "accessed"):
-            self.assertEqual(info.accessed, datetime(2016, 7, 5, tzinfo=pytz.UTC))
+            self.assertEqual(info.accessed, datetime(2016, 7, 5, tzinfo=timezone.utc))
             now = time.time()
             self.fs.touch("new.txt")
             accessed = self.fs.getinfo("new.txt", namespaces=["details"]).raw[
@@ -1738,6 +1737,24 @@ class FSTestCases(object):
         self._test_copy_dir("temp://")
         self._test_copy_dir_write("temp://")
 
+    def test_move_dir_same_fs(self):
+        self.fs.makedirs("foo/bar/baz")
+        self.fs.makedir("egg")
+        self.fs.writetext("top.txt", "Hello, World")
+        self.fs.writetext("/foo/bar/baz/test.txt", "Goodbye, World")
+
+        fs.move.move_dir(self.fs, "foo", self.fs, "foo2")
+
+        expected = {"/egg", "/foo2", "/foo2/bar", "/foo2/bar/baz"}
+        self.assertEqual(set(walk.walk_dirs(self.fs)), expected)
+        self.assert_text("top.txt", "Hello, World")
+        self.assert_text("/foo2/bar/baz/test.txt", "Goodbye, World")
+
+        self.assertEqual(sorted(self.fs.listdir("/")), ["egg", "foo2", "top.txt"])
+        self.assertEqual(
+            sorted(x.name for x in self.fs.scandir("/")), ["egg", "foo2", "top.txt"]
+        )
+
     def _test_move_dir_write(self, protocol):
         # Test moving to this filesystem from another.
         other_fs = open_fs(protocol)
@@ -1760,19 +1777,6 @@ class FSTestCases(object):
     def test_move_dir_temp(self):
         self._test_move_dir_write("temp://")
 
-    def test_move_same_fs(self):
-        self.fs.makedirs("foo/bar/baz")
-        self.fs.makedir("egg")
-        self.fs.writetext("top.txt", "Hello, World")
-        self.fs.writetext("/foo/bar/baz/test.txt", "Goodbye, World")
-
-        fs.move.move_dir(self.fs, "foo", self.fs, "foo2")
-
-        expected = {"/egg", "/foo2", "/foo2/bar", "/foo2/bar/baz"}
-        self.assertEqual(set(walk.walk_dirs(self.fs)), expected)
-        self.assert_text("top.txt", "Hello, World")
-        self.assert_text("/foo2/bar/baz/test.txt", "Goodbye, World")
-
     def test_move_file_same_fs(self):
         text = "Hello, World"
         self.fs.makedir("foo").writetext("test.txt", text)
@@ -1781,6 +1785,9 @@ class FSTestCases(object):
         fs.move.move_file(self.fs, "foo/test.txt", self.fs, "foo/test2.txt")
         self.assert_not_exists("foo/test.txt")
         self.assert_text("foo/test2.txt", text)
+
+        self.assertEqual(self.fs.listdir("foo"), ["test2.txt"])
+        self.assertEqual(next(self.fs.scandir("foo")).name, "test2.txt")
 
     def _test_move_file(self, protocol):
         other_fs = open_fs(protocol)
@@ -1804,6 +1811,40 @@ class FSTestCases(object):
     def test_move_file_temp(self):
         self._test_move_file("temp://")
 
+    def test_move_file_onto_itself(self):
+        self.fs.writetext("file.txt", "Hello")
+        self.fs.move("file.txt", "file.txt", overwrite=True)
+        self.assert_text("file.txt", "Hello")
+
+        with self.assertRaises(errors.DestinationExists):
+            self.fs.move("file.txt", "file.txt", overwrite=False)
+
+    def test_move_file_onto_itself_relpath(self):
+        subdir = self.fs.makedir("sub")
+        subdir.writetext("file.txt", "Hello")
+        self.fs.move("sub/file.txt", "sub/../sub/file.txt", overwrite=True)
+        self.assert_text("sub/file.txt", "Hello")
+
+        with self.assertRaises(errors.DestinationExists):
+            self.fs.move("sub/file.txt", "sub/../sub/file.txt", overwrite=False)
+
+    def test_copy_file_onto_itself(self):
+        self.fs.writetext("file.txt", "Hello")
+        with self.assertRaises(errors.IllegalDestination):
+            self.fs.copy("file.txt", "file.txt", overwrite=True)
+        with self.assertRaises(errors.DestinationExists):
+            self.fs.copy("file.txt", "file.txt", overwrite=False)
+        self.assert_text("file.txt", "Hello")
+
+    def test_copy_file_onto_itself_relpath(self):
+        subdir = self.fs.makedir("sub")
+        subdir.writetext("file.txt", "Hello")
+        with self.assertRaises(errors.IllegalDestination):
+            self.fs.copy("sub/file.txt", "sub/../sub/file.txt", overwrite=True)
+        with self.assertRaises(errors.DestinationExists):
+            self.fs.copy("sub/file.txt", "sub/../sub/file.txt", overwrite=False)
+        self.assert_text("sub/file.txt", "Hello")
+
     def test_copydir(self):
         self.fs.makedirs("foo/bar/baz/egg")
         self.fs.writetext("foo/bar/foofoo.txt", "Hello")
@@ -1820,6 +1861,27 @@ class FSTestCases(object):
             self.fs.copydir("spam", "egg", create=True)
         with self.assertRaises(errors.DirectoryExpected):
             self.fs.copydir("foo2/foofoo.txt", "foofoo.txt", create=True)
+
+    def test_copydir_onto_itself(self):
+        folder = self.fs.makedir("folder")
+        folder.writetext("file1.txt", "Hello1")
+        sub = folder.makedir("sub")
+        sub.writetext("file2.txt", "Hello2")
+
+        with self.assertRaises(errors.IllegalDestination):
+            self.fs.copydir("folder", "folder")
+        self.assert_text("folder/file1.txt", "Hello1")
+        self.assert_text("folder/sub/file2.txt", "Hello2")
+
+    def test_copydir_into_its_own_subfolder(self):
+        folder = self.fs.makedir("folder")
+        folder.writetext("file1.txt", "Hello1")
+        sub = folder.makedir("sub")
+        sub.writetext("file2.txt", "Hello2")
+        with self.assertRaises(errors.IllegalDestination):
+            self.fs.copydir("folder", "folder/sub/")
+        self.assert_text("folder/file1.txt", "Hello1")
+        self.assert_text("folder/sub/file2.txt", "Hello2")
 
     def test_movedir(self):
         self.fs.makedirs("foo/bar/baz/egg")
@@ -1843,6 +1905,27 @@ class FSTestCases(object):
         # Check moving a file
         with self.assertRaises(errors.DirectoryExpected):
             self.fs.movedir("foo2/foofoo.txt", "foo2/baz/egg")
+
+    def test_movedir_onto_itself(self):
+        folder = self.fs.makedir("folder")
+        folder.writetext("file1.txt", "Hello1")
+        sub = folder.makedir("sub")
+        sub.writetext("file2.txt", "Hello2")
+
+        self.fs.movedir("folder", "folder")
+        self.assert_text("folder/file1.txt", "Hello1")
+        self.assert_text("folder/sub/file2.txt", "Hello2")
+
+    def test_movedir_into_its_own_subfolder(self):
+        folder = self.fs.makedir("folder")
+        folder.writetext("file1.txt", "Hello1")
+        sub = folder.makedir("sub")
+        sub.writetext("file2.txt", "Hello2")
+
+        with self.assertRaises(errors.IllegalDestination):
+            self.fs.movedir("folder", "folder/sub/")
+        self.assert_text("folder/file1.txt", "Hello1")
+        self.assert_text("folder/sub/file2.txt", "Hello2")
 
     def test_match(self):
         self.assertTrue(self.fs.match(["*.py"], "foo.py"))

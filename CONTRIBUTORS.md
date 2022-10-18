@@ -2,6 +2,7 @@
 
 Many thanks to the following developers for contributing to this project:
 
+- [Adrian Garcia Badaracco](https://github.com/adriangb)
 - [Alex Povel](https://github.com/alexpovel)
 - [Andreas Tollkötter](https://github.com/atollk)
 - [Andrew Scheller](https://github.com/lurch)
@@ -13,12 +14,13 @@ Many thanks to the following developers for contributing to this project:
 - [Diego Argueta](https://github.com/dargueta)
 - [Eelke van den Bos](https://github.com/eelkevdbos)
 - [Egor Namakonov](https://github.com/fresheed)
+- [Felix Yan](https://github.com/felixonmars)
 - [@FooBarQuaxx](https://github.com/FooBarQuaxx)
 - [Geoff Jukes](https://github.com/geoffjukes)
 - [George Macon](https://github.com/gmacon)
 - [Giampaolo Cimino](https://github.com/gpcimino)
 - [@Hoboneer](https://github.com/Hoboneer)
-- [Jon Hagg](https://github.com/jon-hagg)
+- [Jen Hagg](https://github.com/jenhagg)
 - [Joseph Atkins-Turkish](https://github.com/Spacerat)
 - [Joshua Tauberer](https://github.com/JoshData)
 - [Justin Charlong](https://github.com/jcharlong)
@@ -26,6 +28,7 @@ Many thanks to the following developers for contributing to this project:
 - [Martin Durant](https://github.com/martindurant)
 - [Martin Larralde](https://github.com/althonos)
 - [Masaya Nakamura](https://github.com/mashabow)
+- [Matthew Gamble](https://github.com/djmattyg007)
 - [Morten Engelhardt Olsen](https://github.com/xoriath)
 - [@mrg0029](https://github.com/mrg0029)
 - [Nathan Goldbaum](https://github.com/ngoldbaum)
@@ -37,6 +40,7 @@ Many thanks to the following developers for contributing to this project:
 - [Silvan Spross](https://github.com/sspross)
 - [@sqwishy](https://github.com/sqwishy)
 - [Sven Schliesing](https://github.com/muffl0n)
+- [Thomas Feldmann](https://github.com/tfeldmann)
 - [Tim Gates](https://github.com/timgates42/)
 - [@tkossak](https://github.com/tkossak)
 - [Todd Levi](https://github.com/televi)
